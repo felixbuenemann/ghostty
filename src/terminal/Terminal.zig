@@ -86,7 +86,7 @@ flags: packed struct {
     // This supports a Kitty extension where programs using semantic
     // prompts (OSC133) can annotate their new prompts with `redraw=0` to
     // disable clearing the prompt on resize.
-    shell_redraws_prompt: osc.semantic_prompt.Redraw = .true,
+    shell_redraws_prompt: osc.semantic_prompt.Redraw = .false,
 
     // This is set via ESC[4;2m. Any other modify key mode just sets
     // this to false and we act in mode 1 by default.
