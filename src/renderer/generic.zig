@@ -199,6 +199,15 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         /// don't support a display link.
         display_link: ?DisplayLink = null,
 
+        /// Set by an embedder that's driving draws from its own
+        /// display link (patches/006). When true, `hasVsync()`
+        /// reports the renderer as vsync-driven so the render
+        /// thread skips its change-driven `drawFrame` calls — the
+        /// embedder is now responsible for painting each frame via
+        /// `ghostty_surface_draw`. State updates (`updateFrame`)
+        /// still happen on the render thread on every wakeup.
+        external_vsync_active: std.atomic.Value(bool) = .{ .raw = false },
+
         /// Health of the most recently completed frame.
         health: std.atomic.Value(Health) = .{ .raw = .healthy },
 
@@ -1018,9 +1027,17 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         /// is responsible for triggering draw_now calls to the render thread.
         /// That is the only way to trigger a drawFrame.
         pub fn hasVsync(self: *const Self) bool {
+            if (self.external_vsync_active.load(.monotonic)) return true;
             if (comptime DisplayLink == void) return false;
             const display_link = self.display_link orelse return false;
             return display_link.isRunning();
+        }
+
+        /// Toggle external-vsync mode (patches/006). Safe from any
+        /// thread — the only reader is `hasVsync()` on the render
+        /// thread, which uses the same atomic with monotonic ordering.
+        pub fn setExternalVsyncActive(self: *Self, active: bool) void {
+            self.external_vsync_active.store(active, .monotonic);
         }
 
         /// Callback when the focus changes for the terminal this is rendering.

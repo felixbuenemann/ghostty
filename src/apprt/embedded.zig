@@ -807,6 +807,11 @@ pub const Surface = struct {
         };
     }
 
+    /// Forward to the core surface (patches/006).
+    pub fn setExternalVsyncActive(self: *Surface, active: bool) void {
+        self.core_surface.setExternalVsyncActive(active);
+    }
+
     pub fn updateContentScale(self: *Surface, x: f64, y: f64) void {
         // We are an embedded API so the caller can send us all sorts of
         // garbage. We want to make sure that the float values are valid
@@ -1830,6 +1835,14 @@ pub const CAPI = struct {
     /// call as soon as possible (NOW if possible).
     export fn ghostty_surface_draw(surface: *Surface) void {
         surface.draw();
+    }
+
+    /// Embedder-driven vsync handshake (patches/006). See ghostty.h
+    /// for the contract; in short, pass `true` while a CADisplayLink
+    /// is firing per-tick `ghostty_surface_draw` and `false` when it
+    /// stops. Safe to call from any thread.
+    export fn ghostty_surface_set_external_vsync_active(surface: *Surface, active: bool) void {
+        surface.setExternalVsyncActive(active);
     }
 
     /// Update the size of a surface. This will trigger resize notifications

@@ -896,6 +896,12 @@ pub fn draw(self: *Surface) !void {
     try self.renderer.drawFrame(true);
 }
 
+/// Toggle external-vsync mode (patches/006). The embedder calls this
+/// when its own display link starts/stops driving paints.
+pub fn setExternalVsyncActive(self: *Surface, active: bool) void {
+    self.renderer.setExternalVsyncActive(active);
+}
+
 /// Activate the inspector. This will begin collecting inspection data.
 /// This will not affect the GUI. The GUI must use performAction to
 /// show/hide the inspector UI.

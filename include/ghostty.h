@@ -1128,6 +1128,16 @@ GHOSTTY_API bool ghostty_surface_needs_confirm_quit(ghostty_surface_t);
 GHOSTTY_API bool ghostty_surface_process_exited(ghostty_surface_t);
 GHOSTTY_API void ghostty_surface_refresh(ghostty_surface_t);
 GHOSTTY_API void ghostty_surface_draw(ghostty_surface_t);
+// External vsync provider control (patches/006). When the embedder
+// drives draws from its own display link (e.g. iOS CADisplayLink),
+// it should declare itself the vsync source by passing `true` so
+// the renderer thread stops issuing redundant change-driven draws
+// — only the embedder's per-tick `ghostty_surface_draw` calls
+// paint. State updates (`updateFrame`) keep happening on the render
+// thread either way. Pass `false` when the link stops; the renderer
+// falls back to its normal change-driven path. Safe to call from
+// any thread.
+GHOSTTY_API void ghostty_surface_set_external_vsync_active(ghostty_surface_t, bool);
 GHOSTTY_API void ghostty_surface_set_content_scale(ghostty_surface_t, double, double);
 GHOSTTY_API void ghostty_surface_set_focus(ghostty_surface_t, bool);
 GHOSTTY_API void ghostty_surface_set_occlusion(ghostty_surface_t, bool);
