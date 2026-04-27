@@ -25,9 +25,12 @@ pub fn create(b: *std.Build, opts: Options) ?*MetallibStep {
     const sdk = switch (opts.target.result.os.tag) {
         .macos => "macosx",
         .ios => switch (opts.target.result.abi) {
-            // The iOS simulator uses the same SDK for Metal as the device,
-            // but the minimum version tag causes different behaviors.
-            .simulator => "iphoneos",
+            // The iOS simulator requires Metal shaders compiled against
+            // the iphonesimulator SDK. Using iphoneos here produces a
+            // metallib that fails to load at runtime on the simulator
+            // (newLibraryWithData:error: returns nil), crashing with
+            // a Zig unwrapNull panic in renderer.metal.shaders.initLibrary.
+            .simulator => "iphonesimulator",
             else => "iphoneos",
         },
         else => return null,
