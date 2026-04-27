@@ -2342,6 +2342,22 @@ fn copySelectionToClipboards(
 /// Set the selection contents.
 ///
 /// This must be called with the renderer mutex held.
+/// Programmatic selection entry point for embedders (patches/005).
+/// Bypasses the copy_on_select side effects that the internal
+/// setSelection triggers — an iOS handle drag fires this many times
+/// per second, and we do NOT want the pasteboard rewritten on every
+/// tick. The caller must already hold `renderer_state.mutex`.
+pub fn setSelectionPublic(
+    self: *Surface,
+    sel_: ?terminal.Selection,
+) !void {
+    try self.io.terminal.screens.active.select(sel_);
+    // Clear any in-flight click state so a stale mouse event
+    // doesn't hijack the programmatic selection on the next tick.
+    self.mouse.selection_gesture.left_click_count = 0;
+    try self.queueRender();
+}
+
 fn setSelection(self: *Surface, sel_: ?terminal.Selection) !void {
     const prev_ = self.io.terminal.screens.active.selection;
     try self.io.terminal.screens.active.select(sel_);

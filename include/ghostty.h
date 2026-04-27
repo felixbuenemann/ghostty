@@ -1179,6 +1179,21 @@ GHOSTTY_API bool ghostty_surface_read_text(ghostty_surface_t,
                                               ghostty_selection_s,
                                               ghostty_text_s*);
 GHOSTTY_API void ghostty_surface_free_text(ghostty_surface_t, ghostty_text_s*);
+// Programmatic selection control (patches/005). Lets embedders drive
+// selection by cell coordinates instead of synthesizing mouse events.
+// All four acquire the renderer mutex internally; safe to call from
+// the main UI thread.
+GHOSTTY_API void ghostty_surface_set_selection(ghostty_surface_t,
+                                               ghostty_selection_s);
+GHOSTTY_API void ghostty_surface_clear_selection(ghostty_surface_t);
+// Computes the word-boundary selection at viewport cell (x,y). Does
+// NOT apply it — the caller follows up with ghostty_surface_set_selection
+// if they want to commit it. Matches the word-detection semantics of
+// a double-click. Returns false if the cell has no word.
+GHOSTTY_API bool ghostty_surface_selection_word_at(ghostty_surface_t,
+                                                   uint32_t x,
+                                                   uint32_t y,
+                                                   ghostty_selection_s*);
 
 #ifdef __APPLE__
 GHOSTTY_API void ghostty_surface_set_display_id(ghostty_surface_t, uint32_t);

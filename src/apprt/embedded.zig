@@ -1727,6 +1727,100 @@ pub const CAPI = struct {
         ptr.deinit();
     }
 
+    /// Programmatic selection control (patches/005). The passed
+    /// `ghostty_selection_s` is interpreted against the active screen;
+    /// conversion to tracked pins happens inside `Screen.select()` so
+    /// the selection survives scrollback/rewrap. No-op if the input
+    /// pins can't be resolved.
+    export fn ghostty_surface_set_selection(
+        ptr: *Surface,
+        sel: Selection,
+    ) void {
+        const surface = &ptr.core_surface;
+        surface.renderer_state.mutex.lock();
+        defer surface.renderer_state.mutex.unlock();
+
+        const screen = surface.renderer_state.terminal.screens.active;
+        const core_sel = sel.core(screen) orelse return;
+        surface.setSelectionPublic(core_sel) catch |err| {
+            log.warn("error setting selection err={}", .{err});
+            return;
+        };
+    }
+
+    /// Clear any active selection. No-op if none exists.
+    export fn ghostty_surface_clear_selection(ptr: *Surface) void {
+        const surface = &ptr.core_surface;
+        surface.renderer_state.mutex.lock();
+        defer surface.renderer_state.mutex.unlock();
+        surface.setSelectionPublic(null) catch |err| {
+            log.warn("error clearing selection err={}", .{err});
+            return;
+        };
+    }
+
+    /// Serialize a terminal.Selection as viewport cell bounds into
+    /// `out`. Returns false if either endpoint is outside the
+    /// current viewport (e.g. scrolled off-screen).
+    fn writeSelectionBounds(
+        screen: *terminal.Screen,
+        sel: terminal.Selection,
+        out: *Selection,
+    ) bool {
+        const tl_pin = sel.topLeft(screen);
+        const br_pin = sel.bottomRight(screen);
+        const tl_pt = screen.pages.pointFromPin(.viewport, tl_pin) orelse return false;
+        const br_pt = screen.pages.pointFromPin(.viewport, br_pin) orelse return false;
+        const tl_c = tl_pt.coord();
+        const br_c = br_pt.coord();
+        out.* = .{
+            .tl = .{ .tag = .viewport, .coord_tag = .exact, .x = @intCast(tl_c.x), .y = tl_c.y },
+            .br = .{ .tag = .viewport, .coord_tag = .exact, .x = @intCast(br_c.x), .y = br_c.y },
+            .rectangle = sel.rectangle,
+        };
+        return true;
+    }
+
+    /// Compute the word-boundary selection at viewport cell (x,y).
+    /// Returns false if the cell has no word. Does NOT apply it —
+    /// the caller follows up with ghostty_surface_set_selection.
+    export fn ghostty_surface_selection_word_at(
+        ptr: *Surface,
+        x: u32,
+        y: u32,
+        out: *Selection,
+    ) bool {
+        const surface = &ptr.core_surface;
+        surface.renderer_state.mutex.lock();
+        defer surface.renderer_state.mutex.unlock();
+
+        const screen = surface.renderer_state.terminal.screens.active;
+
+        const pt_x = std.math.cast(
+            terminal.size.CellCountInt,
+            @min(x, screen.pages.cols -| 1),
+        ) orelse return false;
+        const pt_y = std.math.cast(
+            terminal.size.CellCountInt,
+            @min(y, screen.pages.rows -| 1),
+        ) orelse return false;
+
+        const pin = screen.pages.pin(.{
+            .viewport = .{ .x = pt_x, .y = pt_y },
+        }) orelse return false;
+
+        const sel = screen.selectWord(
+            pin,
+            surface.config.selection_word_chars,
+        ) orelse return false;
+        defer {
+            var m = sel;
+            m.deinit(screen);
+        }
+
+        return writeSelectionBounds(screen, sel, out);
+    }
+
     /// Tell the surface that it needs to schedule a render
     export fn ghostty_surface_refresh(surface: *Surface) void {
         surface.refresh();
