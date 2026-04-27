@@ -464,6 +464,11 @@ typedef enum {
   GHOSTTY_SURFACE_CONTEXT_SPLIT = 2,
 } ghostty_surface_context_e;
 
+/// Callback invoked when the terminal wants to write bytes to the
+/// external transport (user keystrokes, terminal query responses).
+/// Only used when external_io is true in the surface config.
+typedef void (*ghostty_write_callback_fn)(void* userdata, const char* data, size_t len);
+
 typedef struct {
   ghostty_platform_e platform_tag;
   ghostty_platform_u platform;
@@ -477,6 +482,12 @@ typedef struct {
   const char* initial_input;
   bool wait_after_command;
   ghostty_surface_context_e context;
+  /// If true, use the ExternalIO backend (no pty, no subprocess).
+  /// The embedder feeds bytes via ghostty_surface_write_to_terminal
+  /// and receives output via write_callback.
+  bool external_io;
+  ghostty_write_callback_fn write_callback;
+  void* write_callback_userdata;
 } ghostty_surface_config_s;
 
 typedef struct {
@@ -1102,6 +1113,13 @@ GHOSTTY_API ghostty_surface_config_s ghostty_surface_config_new();
 GHOSTTY_API ghostty_surface_t ghostty_surface_new(ghostty_app_t,
                                                      const ghostty_surface_config_s*);
 GHOSTTY_API void ghostty_surface_free(ghostty_surface_t);
+
+/// Write bytes to the terminal as if they came from the remote
+/// process. Only meaningful when the surface was created with
+/// external_io=true. Thread-safe.
+GHOSTTY_API void ghostty_surface_write_to_terminal(ghostty_surface_t,
+                                                    const char*,
+                                                    uintptr_t);
 GHOSTTY_API void* ghostty_surface_userdata(ghostty_surface_t);
 GHOSTTY_API ghostty_app_t ghostty_surface_app(ghostty_surface_t);
 GHOSTTY_API ghostty_surface_config_s ghostty_surface_inherited_config(ghostty_surface_t, ghostty_surface_context_e);

@@ -18,6 +18,7 @@ const terminal = @import("../terminal/main.zig");
 const CoreApp = @import("../App.zig");
 const CoreInspector = @import("../inspector/main.zig").Inspector;
 const CoreSurface = @import("../Surface.zig");
+const termio = @import("../termio.zig");
 const configpkg = @import("../config.zig");
 const Config = configpkg.Config;
 const String = @import("../main_c.zig").String;
@@ -412,6 +413,10 @@ pub const Surface = struct {
     platform: Platform,
     userdata: ?*anyopaque = null,
     core_surface: CoreSurface,
+
+    /// When set, Surface.zig uses the ExternalIO backend instead
+    /// of Exec. Set from Options.external_io during init.
+    external_io_config: ?termio.ExternalIO.Config = null,
     content_scale: apprt.ContentScale,
     size: apprt.SurfaceSize,
     cursor_pos: apprt.CursorPos,
@@ -462,6 +467,24 @@ pub const Surface = struct {
 
         /// Context for the new surface
         context: apprt.surface.NewSurfaceContext = .window,
+
+        /// If true, use the ExternalIO backend instead of Exec.
+        /// The surface will not spawn a subprocess or create a pty.
+        /// The embedder feeds terminal input via
+        /// ghostty_surface_write_to_terminal() and receives output
+        /// (user keystrokes) via the write_callback.
+        ///
+        /// IMPORTANT: field order must match the C struct in
+        /// include/ghostty.h exactly — these come AFTER `context`.
+        external_io: bool = false,
+
+        /// Callback invoked on the IO thread when the terminal
+        /// wants to write bytes (user keystrokes, query responses).
+        /// Only used when external_io is true.
+        write_callback: ?*const fn (?*anyopaque, [*]const u8, usize) callconv(.c) void = null,
+
+        /// Userdata passed as the first argument to write_callback.
+        write_callback_userdata: ?*anyopaque = null,
     };
 
     pub fn init(self: *Surface, app: *App, opts: Options) !void {
@@ -573,6 +596,15 @@ pub const Surface = struct {
         // Wait after command
         if (opts.wait_after_command) {
             config.@"wait-after-command" = true;
+        }
+
+        // If external_io mode was requested, store the config so
+        // Surface.zig can pick it up during init.
+        if (opts.external_io) {
+            self.external_io_config = .{
+                .write_fn = opts.write_callback,
+                .write_fn_ud = opts.write_callback_userdata,
+            };
         }
 
         // Initialize our surface right away. We're given a view that is
@@ -1560,6 +1592,20 @@ pub const CAPI = struct {
     export fn ghostty_surface_free(ptr: *Surface) void {
         ptr.app.closeSurface(ptr);
     }
+
+    /// Write bytes to the terminal as if they came from the remote
+    /// process (SSH server output, for example). Only meaningful when
+    /// the surface was created with external_io=true. The bytes are
+    /// fed through the VT parser into the terminal state machine and
+    /// trigger a render. Thread-safe (acquires the renderer mutex).
+    export fn ghostty_surface_write_to_terminal(
+        surface: *Surface,
+        data: [*]const u8,
+        len: usize,
+    ) void {
+        surface.core_surface.io.processOutput(data[0..len]);
+    }
+
 
     /// Returns the userdata associated with the surface.
     export fn ghostty_surface_userdata(surface: *Surface) ?*anyopaque {
