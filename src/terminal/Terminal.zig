@@ -165,6 +165,12 @@ pub const Dirty = packed struct {
 
     /// Set when the pre-edit is modified.
     preedit: bool = false,
+
+    /// Set when the predicted-cells overlay (typing predictor) is
+    /// modified. Forces a full per-row rebuild on the next frame so
+    /// stale predicted cells from the prior overlay don't persist
+    /// in the cell buffer.
+    predicted_cells: bool = false,
 };
 
 /// Scrolling region is the area of the screen designated where scrolling

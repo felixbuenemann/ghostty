@@ -2655,6 +2655,12 @@ pub fn predictedCellsCallback(
         }
     }
 
+    // Force a full per-row rebuild so the prior overlay's cells are
+    // wiped from the renderer's cell buffer; without this the
+    // previous predicted-cells underline would persist on screen
+    // even after we cleared the slice.
+    self.io.terminal.flags.dirty.predicted_cells = true;
+
     try self.queueRender();
 }
 
