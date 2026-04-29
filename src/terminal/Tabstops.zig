@@ -75,6 +75,21 @@ pub fn deinit(self: *Tabstops, alloc: Allocator) void {
     self.* = undefined;
 }
 
+/// Allocate a deep copy of these tabstops. The prealloc segment is
+/// inline so it copies for free; the dynamic segment is duped via
+/// the allocator. Caller owns the result and must call `deinit`.
+pub fn clone(self: Tabstops, alloc: Allocator) Allocator.Error!Tabstops {
+    var result: Tabstops = .{
+        .cols = self.cols,
+        .prealloc_stops = self.prealloc_stops,
+        .dynamic_stops = &[0]Unit{},
+    };
+    if (self.dynamic_stops.len > 0) {
+        result.dynamic_stops = try alloc.dupe(Unit, self.dynamic_stops);
+    }
+    return result;
+}
+
 /// Set the tabstop at a certain column. The columns are 0-indexed.
 pub fn set(self: *Tabstops, col: usize) void {
     const i = entry(col);

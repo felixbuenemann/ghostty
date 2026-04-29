@@ -1157,6 +1157,21 @@ GHOSTTY_API void ghostty_surface_text(ghostty_surface_t, const char*, uintptr_t)
 GHOSTTY_API void ghostty_surface_preedit(ghostty_surface_t, const char*, uintptr_t);
 GHOSTTY_API void ghostty_surface_set_predicted_cursor(ghostty_surface_t, uint32_t, uint32_t);
 GHOSTTY_API void ghostty_surface_clear_predicted_cursor(ghostty_surface_t);
+
+// Per-cell callback for ghostty_surface_dry_run_parse. Called once per
+// cell whose content/style differs from the live screen after the
+// dry-run parse. wide=true marks the leading cell of a wide character;
+// the trailing spacer is reported as a separate call with codepoint=0.
+typedef void (*ghostty_dry_run_cell_cb)(uint32_t col, uint32_t row,
+                                              uint32_t codepoint, uint32_t style_id,
+                                              bool wide, void* userdata);
+GHOSTTY_API void ghostty_surface_dry_run_parse(ghostty_surface_t,
+                                                  const char* bytes, uintptr_t len,
+                                                  ghostty_dry_run_cell_cb on_cell,
+                                                  void* userdata,
+                                                  uint32_t* out_final_cursor_col,
+                                                  uint32_t* out_final_cursor_row);
+
 GHOSTTY_API bool ghostty_surface_mouse_captured(ghostty_surface_t);
 GHOSTTY_API bool ghostty_surface_mouse_button(ghostty_surface_t,
                                                  ghostty_input_mouse_state_e,

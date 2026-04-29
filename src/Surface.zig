@@ -2624,6 +2624,92 @@ pub fn predictedCursorCallback(
     try self.queueRender();
 }
 
+/// Callback type for `dryRunParseCallback`. Invoked once per cell
+/// whose content/style differs from the original screen after the
+/// dry-run parse. Coordinates are in the active viewport.
+pub const DryRunCellFn = ?*const fn (
+    col: u32,
+    row: u32,
+    codepoint: u32,
+    style_id: u32,
+    wide: bool,
+    userdata: ?*anyopaque,
+) callconv(.c) void;
+
+/// Run the VT parser against a clone of the current active screen,
+/// fed `bytes`, and report the per-cell deltas + final cursor
+/// position via `on_cell` and the optional out parameters. The live
+/// Surface state is NOT touched; the clone is torn down before
+/// returning.
+///
+/// Used by typing predictors to ask "what would happen if these
+/// bytes hit the server's terminal?" without actually sending them.
+/// Re-baselining against the live screen each call keeps the
+/// prediction consistent in the face of spontaneous server output
+/// (tmux status bars, vim airline updates, clock ticks, etc.).
+pub fn dryRunParseCallback(
+    self: *Surface,
+    bytes: []const u8,
+    on_cell: DryRunCellFn,
+    userdata: ?*anyopaque,
+    out_final_cursor_col: ?*u32,
+    out_final_cursor_row: ?*u32,
+) !void {
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+
+    const live: *terminal.Terminal = &self.io.terminal;
+
+    var clone = try live.clone(self.alloc);
+    defer clone.deinit(self.alloc);
+
+    // Drive the parser against the clone. effects defaults to
+    // .readonly so device queries / OSC writebacks are no-ops.
+    var stream = clone.vtStream();
+    defer stream.deinit();
+    stream.nextSlice(bytes);
+
+    const live_screen: *const terminal.Screen = live.screens.active;
+    const clone_screen: *const terminal.Screen = clone.screens.active;
+    const rows = live.rows;
+    const cols = live.cols;
+
+    if (on_cell) |cb| {
+        var y: terminal.size.CellCountInt = 0;
+        while (y < rows) : (y += 1) {
+            var x: terminal.size.CellCountInt = 0;
+            while (x < cols) : (x += 1) {
+                const live_pin = live_screen.pages.pin(.{
+                    .active = .{ .x = x, .y = y },
+                }) orelse continue;
+                const clone_pin = clone_screen.pages.pin(.{
+                    .active = .{ .x = x, .y = y },
+                }) orelse continue;
+
+                const live_cell = live_pin.rowAndCell().cell.*;
+                const clone_cell = clone_pin.rowAndCell().cell.*;
+
+                if (@as(u64, @bitCast(live_cell)) ==
+                    @as(u64, @bitCast(clone_cell)))
+                {
+                    continue;
+                }
+
+                const cp: u32 = switch (clone_cell.content_tag) {
+                    .codepoint, .codepoint_grapheme => clone_cell.content.codepoint,
+                    else => 0,
+                };
+                const wide = clone_cell.wide == .wide;
+
+                cb(@intCast(x), @intCast(y), cp, clone_cell.style_id, wide, userdata);
+            }
+        }
+    }
+
+    if (out_final_cursor_col) |p| p.* = @intCast(clone_screen.cursor.x);
+    if (out_final_cursor_row) |p| p.* = @intCast(clone_screen.cursor.y);
+}
+
 /// Returns true if the given key event would trigger a keybinding
 /// if it were to be processed. This is useful for determining if
 /// a key event should be sent to the terminal or not.

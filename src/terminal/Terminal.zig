@@ -259,6 +259,55 @@ pub fn deinit(self: *Terminal, alloc: Allocator) void {
     self.* = undefined;
 }
 
+/// Clone this terminal into a fresh independent terminal. Intended for
+/// short-lived speculative/dry-run use cases (e.g. running the parser
+/// against bytes the user hasn't sent yet, to compute predicted screen
+/// state). The clone shares no mutable state with the original; it can
+/// be fed to `vtStream` like a normal terminal and then deinited.
+///
+/// Only the active screen is cloned (see ScreenSet.clone). Lazy-init of
+/// the alternate screen still works on the clone via the standard
+/// `getInit` path.
+///
+/// Caller owns the result and must call `deinit`.
+pub fn clone(self: *const Terminal, alloc: Allocator) !Terminal {
+    var screens = try self.screens.clone(alloc);
+    errdefer screens.deinit(alloc);
+
+    var tabstops = try self.tabstops.clone(alloc);
+    errdefer tabstops.deinit(alloc);
+
+    var pwd: std.ArrayList(u8) = .empty;
+    errdefer pwd.deinit(alloc);
+    if (self.pwd.items.len > 0) {
+        try pwd.appendSlice(alloc, self.pwd.items);
+    }
+
+    var title: std.ArrayList(u8) = .empty;
+    errdefer title.deinit(alloc);
+    if (self.title.items.len > 0) {
+        try title.appendSlice(alloc, self.title.items);
+    }
+
+    return .{
+        .screens = screens,
+        .status_display = self.status_display,
+        .tabstops = tabstops,
+        .rows = self.rows,
+        .cols = self.cols,
+        .width_px = self.width_px,
+        .height_px = self.height_px,
+        .scrolling_region = self.scrolling_region,
+        .pwd = pwd,
+        .title = title,
+        .colors = self.colors,
+        .previous_char = self.previous_char,
+        .modes = self.modes,
+        .mouse_shape = self.mouse_shape,
+        .flags = self.flags,
+    };
+}
+
 /// Return a terminal.Stream that can process VT streams and update this
 /// terminal state. The streams will only process read-only data that
 /// modifies terminal state.

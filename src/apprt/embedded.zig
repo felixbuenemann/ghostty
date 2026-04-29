@@ -2022,6 +2022,58 @@ pub const CAPI = struct {
         };
     }
 
+    /// Per-cell callback invoked by `ghostty_surface_dry_run_parse`.
+    /// Called once per cell that the dry-run parse would mutate
+    /// relative to the current screen state. `wide` is true for the
+    /// leading cell of a wide character; the trailing spacer is
+    /// reported as a separate call with codepoint 0 and wide=false.
+    pub const DryRunCellCallback = ?*const fn (
+        col: u32,
+        row: u32,
+        codepoint: u32,
+        style_id: u32,
+        wide: bool,
+        userdata: ?*anyopaque,
+    ) callconv(.c) void;
+
+    /// Run ghostty's parser against a clone of the current active
+    /// screen, fed the given bytes, and report the per-cell mutations
+    /// + final cursor position. The original surface state is NOT
+    /// modified -- everything happens on a clone that's torn down
+    /// before this returns.
+    ///
+    /// Use case: typing predictors (e.g. Mosh local-echo) that want
+    /// to know what would happen if the user's pending keystrokes
+    /// were processed by the server. Re-base against the live screen
+    /// each call so spontaneous server output stays consistent.
+    ///
+    /// Cell ordering is row-major: cells iterate left-to-right,
+    /// top-to-bottom across the active area. Final cursor coords are
+    /// written even if no cells changed; pass null for either out-ptr
+    /// to skip.
+    export fn ghostty_surface_dry_run_parse(
+        surface: *Surface,
+        bytes: [*]const u8,
+        len: usize,
+        on_cell: DryRunCellCallback,
+        userdata: ?*anyopaque,
+        out_final_cursor_col: ?*u32,
+        out_final_cursor_row: ?*u32,
+    ) void {
+        surface.core_surface.dryRunParseCallback(
+            bytes[0..len],
+            on_cell,
+            userdata,
+            out_final_cursor_col,
+            out_final_cursor_row,
+        ) catch |err| {
+            log.warn(
+                "error in dry-run parse err={}",
+                .{err},
+            );
+        };
+    }
+
     /// Returns true if the surface currently has mouse capturing
     /// enabled.
     export fn ghostty_surface_mouse_captured(surface: *Surface) bool {

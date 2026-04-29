@@ -60,6 +60,35 @@ pub fn deinit(self: *ScreenSet, alloc: Allocator) void {
     }
 }
 
+/// Clone the active screen into a fresh ScreenSet. Only the active
+/// screen is cloned -- the alternate slot (if any) is left
+/// uninitialized. This is intended for short-lived speculative
+/// scratch terminals (e.g. dry-run parsing) where we operate on the
+/// currently-visible screen and don't need cross-screen mode
+/// switches; if the parsed bytes do try to switch screens, the
+/// alternate slot lazy-inits like normal via `getInit`. Caller owns
+/// the result and must call `deinit`.
+pub fn clone(self: *const ScreenSet, alloc: Allocator) !ScreenSet {
+    const new_active = try alloc.create(Screen);
+    errdefer alloc.destroy(new_active);
+    new_active.* = try self.active.clone(
+        alloc,
+        .{ .screen = .{ .x = 0, .y = 0 } },
+        null,
+    );
+    errdefer new_active.deinit();
+
+    var new_all: std.EnumMap(Key, *Screen) = .{};
+    new_all.put(self.active_key, new_active);
+
+    return .{
+        .active_key = self.active_key,
+        .active = new_active,
+        .all = new_all,
+        .generations = self.generations,
+    };
+}
+
 /// Get the screen for the given key, if it is initialized.
 pub fn get(self: *const ScreenSet, key: Key) ?*Screen {
     return self.all.get(key);
