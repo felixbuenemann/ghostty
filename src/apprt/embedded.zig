@@ -1986,6 +1986,42 @@ pub const CAPI = struct {
         surface.preeditCallback(if (len == 0) null else ptr[0..len]);
     }
 
+    /// Set the predicted cursor position. The renderer will draw the
+    /// cursor at this viewport coordinate (col=x, row=y) instead of at
+    /// the real cursor position; the real cursor is hidden for the
+    /// duration. Used by typing predictors / local-echo machinery
+    /// (e.g. Mosh) to jump the cursor under the user's finger before
+    /// the server confirms it.
+    export fn ghostty_surface_set_predicted_cursor(
+        surface: *Surface,
+        col: u32,
+        row: u32,
+    ) void {
+        surface.core_surface.predictedCursorCallback(.{
+            .x = @intCast(col),
+            .y = row,
+        }) catch |err| {
+            log.warn(
+                "error setting predicted cursor err={}",
+                .{err},
+            );
+        };
+    }
+
+    /// Clear any predicted cursor previously set via
+    /// ghostty_surface_set_predicted_cursor. The next frame renders
+    /// the real cursor again.
+    export fn ghostty_surface_clear_predicted_cursor(
+        surface: *Surface,
+    ) void {
+        surface.core_surface.predictedCursorCallback(null) catch |err| {
+            log.warn(
+                "error clearing predicted cursor err={}",
+                .{err},
+            );
+        };
+    }
+
     /// Returns true if the surface currently has mouse capturing
     /// enabled.
     export fn ghostty_surface_mouse_captured(surface: *Surface) bool {

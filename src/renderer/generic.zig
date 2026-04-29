@@ -1219,6 +1219,22 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 // Update our terminal state
                 try self.terminal_state.update(self.alloc, state.terminal);
 
+                // If a typing predictor has set a predicted cursor, override
+                // the viewport cursor so the renderer draws ONE cursor at
+                // the predicted position. The real cursor isn't drawn for
+                // the duration; clearing predicted_cursor lets the next frame
+                // pick up the real cursor again. preedit_range below also
+                // anchors off cursor.viewport, so it follows automatically.
+                if (state.predicted_cursor) |pc| {
+                    const max_x = self.terminal_state.cols -| 1;
+                    const max_y = self.terminal_state.rows -| 1;
+                    self.terminal_state.cursor.viewport = .{
+                        .x = @intCast(@min(pc.x, max_x)),
+                        .y = @intCast(@min(pc.y, max_y)),
+                        .wide_tail = false,
+                    };
+                }
+
                 // If our terminal state is dirty at all we need to redo
                 // the viewport search.
                 if (self.terminal_state.dirty != .false) {

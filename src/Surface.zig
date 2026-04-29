@@ -2606,6 +2606,24 @@ pub fn preeditCallback(self: *Surface, preedit_: ?[]const u8) !void {
     try self.queueRender();
 }
 
+/// Set or clear the predicted cursor position. When set, the renderer
+/// draws the cursor at this viewport coordinate instead of the real
+/// cursor; the real cursor is hidden for the duration. Pass null to
+/// clear, restoring the real cursor on the next frame.
+///
+/// Used by typing predictors (e.g. Mosh local-echo) to move the cursor
+/// under the user's finger before the server confirms.
+pub fn predictedCursorCallback(
+    self: *Surface,
+    coord: ?terminal.point.Coordinate,
+) !void {
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+
+    self.renderer_state.predicted_cursor = coord;
+    try self.queueRender();
+}
+
 /// Returns true if the given key event would trigger a keybinding
 /// if it were to be processed. This is useful for determining if
 /// a key event should be sent to the terminal or not.

@@ -26,6 +26,16 @@ inspector: ?*Inspector = null,
 /// a future exercise.
 preedit: ?Preedit = null,
 
+/// Predicted cursor position. When set, the renderer draws the cursor
+/// at this viewport coordinate instead of the real cursor position from
+/// the terminal state, and the real cursor is hidden for the duration.
+/// The preedit (if any) anchors at the predicted position too.
+///
+/// Used by typing predictors / local-echo machinery (e.g. Mosh) to jump
+/// the cursor under the user's finger before the server confirms. When
+/// cleared, the next frame renders the real cursor again.
+predicted_cursor: ?terminalpkg.point.Coordinate = null,
+
 /// Mouse state. This only contains state relevant to what renderers
 /// need about the mouse.
 mouse: Mouse = .{},
