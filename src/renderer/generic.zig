@@ -1174,6 +1174,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 links: terminal.RenderState.CellSet,
                 mouse: renderer.State.Mouse,
                 preedit: ?renderer.State.Preedit,
+                predicted_cells: ?[]renderer.State.PredictedCell,
                 scrollbar: terminal.Scrollbar,
                 overlay_features: []const Overlay.Feature,
             };
@@ -1254,6 +1255,17 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     break :preedit try p.clone(arena_alloc);
                 };
 
+                // Snapshot the predicted-cell overlay (typing
+                // predictor). Cloned into the arena so we don't hold
+                // the renderer mutex across the rebuild loop.
+                const predicted_cells: ?[]renderer.State.PredictedCell = pc: {
+                    const src = state.predicted_cells orelse break :pc null;
+                    break :pc try arena_alloc.dupe(
+                        renderer.State.PredictedCell,
+                        src,
+                    );
+                };
+
                 // If we have Kitty graphics data, we enter a SLOW SLOW SLOW path.
                 // We only do this if the Kitty image state is dirty meaning only if
                 // it changes.
@@ -1307,6 +1319,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .links = links,
                     .mouse = state.mouse,
                     .preedit = preedit,
+                    .predicted_cells = predicted_cells,
                     .scrollbar = scrollbar,
                     .overlay_features = overlay_features,
                 };
@@ -1396,6 +1409,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 // Build our GPU cells
                 self.rebuildCells(
                     critical.preedit,
+                    critical.predicted_cells,
                     renderer.cursorStyle(&self.terminal_state, .{
                         .preedit = critical.preedit != null,
                         .focused = self.focused,
@@ -2340,6 +2354,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         fn rebuildCells(
             self: *Self,
             preedit: ?renderer.State.Preedit,
+            predicted_cells: ?[]renderer.State.PredictedCell,
             cursor_style_: ?renderer.CursorStyle,
             links: *const terminal.RenderState.CellSet,
         ) Allocator.Error!void {
@@ -2628,6 +2643,60 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     };
 
                     x += if (cp.wide) 2 else 1;
+                }
+            }
+
+            // Setup typing-predictor overlay cells. Each cell is
+            // rendered with predicted-cell styling (underline) IF the
+            // real cell at that position is empty -- this is implicit
+            // per-cell credit. When the server echoes a character that
+            // matches the prediction, the real cell becomes non-empty
+            // and the overlay no longer renders, so the user never
+            // sees the same character twice.
+            //
+            // Wide-character spacers (codepoint=0, wide=false at the
+            // trailing column) are included by the predictor; this
+            // loop just no-ops them via the codepoint==0 guard since
+            // the leading cell already added the second-column
+            // underline.
+            if (predicted_cells) |cells_pc| {
+                for (cells_pc) |pc| {
+                    if (pc.codepoint == 0) continue;
+                    if (pc.row >= state.rows) continue;
+                    if (pc.col >= state.cols) continue;
+
+                    // Check the live cell at this position. If it's
+                    // already non-empty (server has written something
+                    // there), skip the overlay -- the user already
+                    // sees real content.
+                    const pc_row_cells = state.row_data
+                        .items(.cells)[pc.row].slice();
+                    if (pc.col < pc_row_cells.len) {
+                        const live_raws = pc_row_cells.items(.raw);
+                        const live = live_raws[pc.col];
+                        // .codepoint / .codepoint_grapheme are the
+                        // text-bearing variants; non-zero means a
+                        // glyph would render. A zero codepoint or a
+                        // pure background-color cell counts as
+                        // "empty enough" to overlay.
+                        const has_text = switch (live.content_tag) {
+                            .codepoint, .codepoint_grapheme =>
+                                live.content.codepoint != 0,
+                            .bg_color_palette, .bg_color_rgb => false,
+                        };
+                        if (has_text) continue;
+                    }
+
+                    self.addPreeditCell(
+                        .{ .codepoint = @intCast(pc.codepoint), .wide = pc.wide },
+                        .{ .x = pc.col, .y = pc.row },
+                        state.colors.foreground,
+                    ) catch |err| {
+                        log.warn(
+                            "error building predicted cell, will be invalid col={} row={} err={}",
+                            .{ pc.col, pc.row, err },
+                        );
+                    };
                 }
             }
 

@@ -36,9 +36,34 @@ preedit: ?Preedit = null,
 /// cleared, the next frame renders the real cursor again.
 predicted_cursor: ?terminalpkg.point.Coordinate = null,
 
+/// Predicted cells overlaid on the screen. Used by typing predictors
+/// (e.g. Mosh local-echo) to render predicted printable characters at
+/// specific viewport positions, INDEPENDENT of the cursor.
+///
+/// The renderer only paints a predicted cell when the real cell at
+/// that position is empty — this is implicit per-cell credit: when
+/// the server echoes a character that matches the prediction, the
+/// real cell becomes non-empty and the prediction overlay no longer
+/// renders, so the user never sees the same character twice.
+///
+/// For wide characters, the predictor must emit two cells: the
+/// leading cell with the codepoint and `wide=true`, and the trailing
+/// spacer cell with codepoint=0 and `wide=false`. The trailing
+/// spacer ensures the underline extends across both columns.
+predicted_cells: ?[]PredictedCell = null,
+
 /// Mouse state. This only contains state relevant to what renderers
 /// need about the mouse.
 mouse: Mouse = .{},
+
+/// One predicted cell. The renderer overlays this on the live screen
+/// when the real cell at (col, row) is empty.
+pub const PredictedCell = struct {
+    col: terminalpkg.size.CellCountInt,
+    row: terminalpkg.size.CellCountInt,
+    codepoint: u32,
+    wide: bool,
+};
 
 pub const Mouse = struct {
     /// The point on the viewport where the mouse currently is. We use

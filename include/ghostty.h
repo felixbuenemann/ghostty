@@ -1158,6 +1158,33 @@ GHOSTTY_API void ghostty_surface_preedit(ghostty_surface_t, const char*, uintptr
 GHOSTTY_API void ghostty_surface_set_predicted_cursor(ghostty_surface_t, uint32_t, uint32_t);
 GHOSTTY_API void ghostty_surface_clear_predicted_cursor(ghostty_surface_t);
 
+// One predicted cell. Embedders build an array of these and pass it
+// to ghostty_surface_set_predicted_cells. For a wide character emit
+// two entries: the leading cell with codepoint and wide=true, and a
+// trailing spacer with codepoint=0.
+typedef struct {
+    uint32_t col;
+    uint32_t row;
+    uint32_t codepoint;
+    bool wide;
+} ghostty_predicted_cell_s;
+
+// Replace the predicted-cells overlay. Each cell renders with
+// prediction styling (underline) at (col, row) IF the live cell at
+// that position is empty. Call with count=0 (cells may be NULL) to
+// clear.
+GHOSTTY_API void ghostty_surface_set_predicted_cells(ghostty_surface_t,
+                                                          const ghostty_predicted_cell_s* cells,
+                                                          uintptr_t count);
+
+// Read the live cursor position (active-area viewport coordinates).
+// Used by typing predictors to detect when the server has echoed a
+// previously-predicted character (live cursor advances to the
+// predicted post-character position).
+GHOSTTY_API void ghostty_surface_get_cursor(ghostty_surface_t,
+                                                 uint32_t* out_col,
+                                                 uint32_t* out_row);
+
 // Per-cell callback for ghostty_surface_dry_run_parse. Called once per
 // cell whose content/style differs from the live screen after the
 // dry-run parse. wide=true marks the leading cell of a wide character;

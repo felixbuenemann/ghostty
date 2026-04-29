@@ -843,6 +843,7 @@ pub fn deinit(self: *Surface) void {
 
     // Clean up our render state
     if (self.renderer_state.preedit) |p| self.alloc.free(p.codepoints);
+    if (self.renderer_state.predicted_cells) |pc| self.alloc.free(pc);
     self.alloc.destroy(self.renderer_state.mutex);
     self.config.deinit();
 
@@ -2622,6 +2623,57 @@ pub fn predictedCursorCallback(
 
     self.renderer_state.predicted_cursor = coord;
     try self.queueRender();
+}
+
+/// Set the predicted-cells overlay. The renderer paints each cell's
+/// codepoint at (col, row) with prediction styling (underline) IF
+/// the real cell at that position is empty -- implicit per-cell
+/// credit. Pass nil/empty to clear.
+///
+/// Caller-owned memory; this method dupes the slice so the caller is
+/// free to release the input after the call returns. The previously-
+/// installed overlay (if any) is freed.
+pub fn predictedCellsCallback(
+    self: *Surface,
+    cells: ?[]const rendererpkg.State.PredictedCell,
+) !void {
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+
+    if (self.renderer_state.predicted_cells) |old| {
+        self.alloc.free(old);
+        self.renderer_state.predicted_cells = null;
+    }
+
+    if (cells) |c| {
+        if (c.len > 0) {
+            const owned = try self.alloc.dupe(
+                rendererpkg.State.PredictedCell,
+                c,
+            );
+            self.renderer_state.predicted_cells = owned;
+        }
+    }
+
+    try self.queueRender();
+}
+
+/// Read the live cursor position (active-area viewport coordinates).
+/// Cheap; locks only the renderer mutex. Used by typing predictors
+/// to detect when the server has echoed a previously-predicted
+/// character (live cursor advances to the predicted post-character
+/// position).
+pub fn getCursorPosition(
+    self: *Surface,
+) terminal.point.Coordinate {
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+
+    const cursor = self.io.terminal.screens.active.cursor;
+    return .{
+        .x = cursor.x,
+        .y = cursor.y,
+    };
 }
 
 /// Callback type for `dryRunParseCallback`. Invoked once per cell

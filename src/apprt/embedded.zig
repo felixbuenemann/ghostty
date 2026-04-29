@@ -2022,6 +2022,86 @@ pub const CAPI = struct {
         };
     }
 
+    /// One predicted cell. Mirrors `renderer.State.PredictedCell` for
+    /// the C ABI; the embedder builds an array of these and hands it
+    /// to `ghostty_surface_set_predicted_cells`.
+    pub const PredictedCellC = extern struct {
+        col: u32,
+        row: u32,
+        codepoint: u32,
+        wide: bool,
+    };
+
+    /// Replace the predicted-cells overlay. Each cell is rendered with
+    /// prediction styling (underline) at (col, row) IF the live cell
+    /// at that position is empty. Implicit per-cell credit: when the
+    /// server echoes the predicted character, the real cell becomes
+    /// non-empty and the overlay disappears -- so the same character
+    /// never renders twice.
+    ///
+    /// Wide characters: the embedder must emit two cells -- the leading
+    /// cell with codepoint and wide=true, and a trailing spacer with
+    /// codepoint=0. The trailing spacer ensures the underline extends
+    /// across both columns.
+    ///
+    /// Pass `count == 0` (cells may be null) to clear.
+    export fn ghostty_surface_set_predicted_cells(
+        surface: *Surface,
+        cells: ?[*]const PredictedCellC,
+        count: usize,
+    ) void {
+        if (count == 0 or cells == null) {
+            surface.core_surface.predictedCellsCallback(null) catch |err| {
+                log.warn("error clearing predicted cells err={}", .{err});
+            };
+            return;
+        }
+
+        var stack_buf: [256]renderer.State.PredictedCell = undefined;
+        var heap_buf: ?[]renderer.State.PredictedCell = null;
+        defer if (heap_buf) |h| surface.core_surface.alloc.free(h);
+        const buf: []renderer.State.PredictedCell = if (count <= stack_buf.len)
+            stack_buf[0..count]
+        else heap: {
+            const h = surface.core_surface.alloc.alloc(
+                renderer.State.PredictedCell,
+                count,
+            ) catch |err| {
+                log.warn("OOM building predicted cells err={}", .{err});
+                return;
+            };
+            heap_buf = h;
+            break :heap h;
+        };
+
+        const src = cells.?[0..count];
+        for (src, 0..) |c, i| {
+            buf[i] = .{
+                .col = @intCast(c.col),
+                .row = @intCast(c.row),
+                .codepoint = c.codepoint,
+                .wide = c.wide,
+            };
+        }
+
+        surface.core_surface.predictedCellsCallback(buf) catch |err| {
+            log.warn("error setting predicted cells err={}", .{err});
+        };
+    }
+
+    /// Read the live cursor position (active-area viewport
+    /// coordinates). Used by typing predictors to detect when the
+    /// server has echoed a previously-predicted character.
+    export fn ghostty_surface_get_cursor(
+        surface: *Surface,
+        out_col: ?*u32,
+        out_row: ?*u32,
+    ) void {
+        const coord = surface.core_surface.getCursorPosition();
+        if (out_col) |p| p.* = @intCast(coord.x);
+        if (out_row) |p| p.* = coord.y;
+    }
+
     /// Per-cell callback invoked by `ghostty_surface_dry_run_parse`.
     /// Called once per cell that the dry-run parse would mutate
     /// relative to the current screen state. `wide` is true for the
