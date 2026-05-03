@@ -52,6 +52,14 @@ predicted_cursor: ?terminalpkg.point.Coordinate = null,
 /// spacer ensures the underline extends across both columns.
 predicted_cells: ?[]PredictedCell = null,
 
+/// Whether predicted_cells should render with an underline overlay
+/// ("flagging" in mosh's terminology). Predictors set this when
+/// they want to communicate uncertainty (slow link, prediction
+/// outstanding past glitch threshold). When false, predicted cells
+/// render as plain glyphs over empty cells -- the user sees the
+/// preview without the visual "iffy" marker.
+predicted_cells_flagged: bool = false,
+
 /// Mouse state. This only contains state relevant to what renderers
 /// need about the mouse.
 mouse: Mouse = .{},

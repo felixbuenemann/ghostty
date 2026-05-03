@@ -1169,13 +1169,15 @@ typedef struct {
     bool wide;
 } ghostty_predicted_cell_s;
 
-// Replace the predicted-cells overlay. Each cell renders with
-// prediction styling (underline) at (col, row) IF the live cell at
-// that position is empty. Call with count=0 (cells may be NULL) to
-// clear.
+// Replace the predicted-cells overlay. Each cell renders at
+// (col, row) IF the live cell at that position is empty. `flagged`
+// selects mosh-style flagging rendering (underline overlay); pass
+// false to render the glyph plain. Call with count=0 (cells may be
+// NULL) to clear.
 GHOSTTY_API void ghostty_surface_set_predicted_cells(ghostty_surface_t,
                                                           const ghostty_predicted_cell_s* cells,
-                                                          uintptr_t count);
+                                                          uintptr_t count,
+                                                          bool flagged);
 
 // Read the live cursor position (active-area viewport coordinates).
 // Used by typing predictors to detect when the server has echoed a

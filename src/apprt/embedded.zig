@@ -2032,26 +2032,25 @@ pub const CAPI = struct {
         wide: bool,
     };
 
-    /// Replace the predicted-cells overlay. Each cell is rendered with
-    /// prediction styling (underline) at (col, row) IF the live cell
-    /// at that position is empty. Implicit per-cell credit: when the
-    /// server echoes the predicted character, the real cell becomes
-    /// non-empty and the overlay disappears -- so the same character
-    /// never renders twice.
+    /// Replace the predicted-cells overlay. Each cell is rendered at
+    /// (col, row) IF the live cell at that position is empty (per-
+    /// cell credit). `flagged` selects mosh-style flagging rendering
+    /// (underline overlay); pass false for the unflagged path which
+    /// still renders the glyph but without the "this is iffy"
+    /// marker. Pass `count == 0` (cells may be null) to clear.
     ///
     /// Wide characters: the embedder must emit two cells -- the leading
     /// cell with codepoint and wide=true, and a trailing spacer with
     /// codepoint=0. The trailing spacer ensures the underline extends
-    /// across both columns.
-    ///
-    /// Pass `count == 0` (cells may be null) to clear.
+    /// across both columns when flagged.
     export fn ghostty_surface_set_predicted_cells(
         surface: *Surface,
         cells: ?[*]const PredictedCellC,
         count: usize,
+        flagged: bool,
     ) void {
         if (count == 0 or cells == null) {
-            surface.core_surface.predictedCellsCallback(null) catch |err| {
+            surface.core_surface.predictedCellsCallback(null, flagged) catch |err| {
                 log.warn("error clearing predicted cells err={}", .{err});
             };
             return;
@@ -2084,7 +2083,7 @@ pub const CAPI = struct {
             };
         }
 
-        surface.core_surface.predictedCellsCallback(buf) catch |err| {
+        surface.core_surface.predictedCellsCallback(buf, flagged) catch |err| {
             log.warn("error setting predicted cells err={}", .{err});
         };
     }

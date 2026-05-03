@@ -1175,6 +1175,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 mouse: renderer.State.Mouse,
                 preedit: ?renderer.State.Preedit,
                 predicted_cells: ?[]renderer.State.PredictedCell,
+                predicted_cells_flagged: bool,
                 scrollbar: terminal.Scrollbar,
                 overlay_features: []const Overlay.Feature,
             };
@@ -1265,6 +1266,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                         src,
                     );
                 };
+                const predicted_cells_flagged: bool = state.predicted_cells_flagged;
 
                 // If we have Kitty graphics data, we enter a SLOW SLOW SLOW path.
                 // We only do this if the Kitty image state is dirty meaning only if
@@ -1320,6 +1322,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .mouse = state.mouse,
                     .preedit = preedit,
                     .predicted_cells = predicted_cells,
+                    .predicted_cells_flagged = predicted_cells_flagged,
                     .scrollbar = scrollbar,
                     .overlay_features = overlay_features,
                 };
@@ -1410,6 +1413,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 self.rebuildCells(
                     critical.preedit,
                     critical.predicted_cells,
+                    critical.predicted_cells_flagged,
                     renderer.cursorStyle(&self.terminal_state, .{
                         .preedit = critical.preedit != null,
                         .focused = self.focused,
@@ -2355,6 +2359,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             self: *Self,
             preedit: ?renderer.State.Preedit,
             predicted_cells: ?[]renderer.State.PredictedCell,
+            predicted_cells_flagged: bool,
             cursor_style_: ?renderer.CursorStyle,
             links: *const terminal.RenderState.CellSet,
         ) Allocator.Error!void {
@@ -2690,10 +2695,38 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                         if (pc.codepoint == 0x20) continue;
                     }
 
-                    self.addPreeditCell(
+                    // Color rendition matching: walk LEFT in the
+                    // same row looking for the nearest non-empty
+                    // styled cell. Use ITS resolved foreground for
+                    // the prediction, so a predicted "ls" inherits
+                    // the prompt's input color instead of always
+                    // rendering with the default fg. Mosh's "match
+                    // rest of row to actual renditions" achieved
+                    // renderer-side. Falls back to default fg when
+                    // no styled neighbor exists.
+                    const predicted_fg: terminal.color.RGB = neighbor: {
+                        if (pc.col == 0) break :neighbor state.colors.foreground;
+                        const pc_row_data = state.row_data.items(.cells)[pc.row];
+                        var c: terminal.size.CellCountInt = pc.col;
+                        while (c > 0) {
+                            c -= 1;
+                            const live = pc_row_data.get(c);
+                            if (live.raw.hasStyling()) {
+                                break :neighbor live.style.fg(.{
+                                    .default = state.colors.foreground,
+                                    .palette = &state.colors.palette,
+                                    .bold = self.config.bold_color,
+                                });
+                            }
+                        }
+                        break :neighbor state.colors.foreground;
+                    };
+
+                    self.addPredictedCell(
                         .{ .codepoint = @intCast(pc.codepoint), .wide = pc.wide },
                         .{ .x = pc.col, .y = pc.row },
-                        state.colors.foreground,
+                        predicted_fg,
+                        predicted_cells_flagged,
                     ) catch |err| {
                         log.warn(
                             "error building predicted cell, will be invalid col={} row={} err={}",
@@ -3454,6 +3487,52 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             try self.addUnderline(@intCast(coord.x), @intCast(coord.y), .single, screen_fg, 255);
             if (cp.wide and coord.x < self.cells.size.columns - 1) {
                 try self.addUnderline(@intCast(coord.x + 1), @intCast(coord.y), .single, screen_fg, 255);
+            }
+        }
+
+        /// Render a predicted-cell glyph at `coord`. When `flagged`,
+        /// also draws an underline (mosh's "this is iffy" marker).
+        /// Otherwise the glyph paints alone -- the user sees the
+        /// preview without the visual flag.
+        fn addPredictedCell(
+            self: *Self,
+            cp: renderer.State.Preedit.Codepoint,
+            coord: terminal.Coordinate,
+            screen_fg: terminal.color.RGB,
+            flagged: bool,
+        ) !void {
+            const render_ = self.font_grid.renderCodepoint(
+                self.alloc,
+                @intCast(cp.codepoint),
+                .regular,
+                .text,
+                .{ .grid_metrics = self.grid_metrics },
+            ) catch |err| {
+                log.warn("error rendering predicted glyph err={}", .{err});
+                return;
+            };
+            const render = render_ orelse {
+                log.warn("failed to find font for predicted codepoint={X}", .{cp.codepoint});
+                return;
+            };
+
+            try self.cells.add(self.alloc, .text, .{
+                .atlas = .grayscale,
+                .grid_pos = .{ @intCast(coord.x), @intCast(coord.y) },
+                .color = .{ screen_fg.r, screen_fg.g, screen_fg.b, 255 },
+                .glyph_pos = .{ render.glyph.atlas_x, render.glyph.atlas_y },
+                .glyph_size = .{ render.glyph.width, render.glyph.height },
+                .bearings = .{
+                    @intCast(render.glyph.offset_x),
+                    @intCast(render.glyph.offset_y),
+                },
+            });
+
+            if (flagged) {
+                try self.addUnderline(@intCast(coord.x), @intCast(coord.y), .single, screen_fg, 255);
+                if (cp.wide and coord.x < self.cells.size.columns - 1) {
+                    try self.addUnderline(@intCast(coord.x + 1), @intCast(coord.y), .single, screen_fg, 255);
+                }
             }
         }
 

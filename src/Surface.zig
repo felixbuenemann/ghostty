@@ -2636,6 +2636,7 @@ pub fn predictedCursorCallback(
 pub fn predictedCellsCallback(
     self: *Surface,
     cells: ?[]const rendererpkg.State.PredictedCell,
+    flagged: bool,
 ) !void {
     self.renderer_state.mutex.lock();
     defer self.renderer_state.mutex.unlock();
@@ -2654,6 +2655,7 @@ pub fn predictedCellsCallback(
             self.renderer_state.predicted_cells = owned;
         }
     }
+    self.renderer_state.predicted_cells_flagged = flagged;
 
     // Force a full per-row rebuild so the prior overlay's cells are
     // wiped from the renderer's cell buffer; without this the
