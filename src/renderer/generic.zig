@@ -2670,29 +2670,35 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     if (pc.row >= state.rows) continue;
                     if (pc.col >= state.cols) continue;
 
-                    // Check the live cell at this position. If it's
-                    // already non-empty (server has written something
-                    // there), skip the overlay -- the user already
-                    // sees real content. Also skip if the prediction
-                    // is a space (0x20) over an empty cell: the
-                    // visual outcome of the prediction (a blank cell)
-                    // already matches reality, so the underline would
-                    // just be visual noise. This makes destructive-
-                    // backspace predictions (which write a space at
-                    // the deleted position) render cleanly when the
-                    // server completes the deletion.
+                    // Per-cell credit. Compare the live cell's
+                    // codepoint against the prediction:
+                    //
+                    //   - live matches predicted -> server already
+                    //     painted what we predicted -> skip overlay
+                    //     (no visual difference, no underline noise).
+                    //   - predicted is space (0x20) over an empty
+                    //     live cell -> blank-on-blank match -> skip
+                    //     (so destructive-BS predictions clear
+                    //     cleanly once the server processes them).
+                    //   - everything else -> overlay the prediction.
+                    //     Live had `b` and we predicted `c`? Show
+                    //     `c` -- the user typed a BS and a `c`
+                    //     locally, the server hasn't reflected it
+                    //     yet, mosh-style "show the user's intent".
+                    //     If the prediction is wrong it'll get
+                    //     dropped via cursor credit / echoAck.
                     const pc_row_cells = state.row_data
                         .items(.cells)[pc.row].slice();
                     if (pc.col < pc_row_cells.len) {
                         const live_raws = pc_row_cells.items(.raw);
                         const live = live_raws[pc.col];
-                        const has_text = switch (live.content_tag) {
+                        const live_cp: u32 = switch (live.content_tag) {
                             .codepoint, .codepoint_grapheme =>
-                                live.content.codepoint != 0,
-                            .bg_color_palette, .bg_color_rgb => false,
+                                live.content.codepoint,
+                            .bg_color_palette, .bg_color_rgb => 0,
                         };
-                        if (has_text) continue;
-                        if (pc.codepoint == 0x20) continue;
+                        if (live_cp == pc.codepoint) continue;
+                        if (pc.codepoint == 0x20 and live_cp == 0) continue;
                     }
 
                     // Color rendition matching: walk LEFT in the
