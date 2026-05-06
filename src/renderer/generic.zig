@@ -2701,37 +2701,19 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                         if (pc.codepoint == 0x20 and live_cp == 0) continue;
                     }
 
-                    // Color rendition matching: walk LEFT in the
-                    // same row looking for the nearest non-empty
-                    // styled cell. Use ITS resolved foreground for
-                    // the prediction, so a predicted "ls" inherits
-                    // the prompt's input color instead of always
-                    // rendering with the default fg. Mosh's "match
-                    // rest of row to actual renditions" achieved
-                    // renderer-side. Falls back to default fg when
-                    // no styled neighbor exists.
-                    const predicted_fg: terminal.color.RGB = neighbor: {
-                        if (pc.col == 0) break :neighbor state.colors.foreground;
-                        const pc_row_data = state.row_data.items(.cells)[pc.row];
-                        var c: terminal.size.CellCountInt = pc.col;
-                        while (c > 0) {
-                            c -= 1;
-                            const live = pc_row_data.get(c);
-                            if (live.raw.hasStyling()) {
-                                break :neighbor live.style.fg(.{
-                                    .default = state.colors.foreground,
-                                    .palette = &state.colors.palette,
-                                    .bold = self.config.bold_color,
-                                });
-                            }
-                        }
-                        break :neighbor state.colors.foreground;
-                    };
-
+                    // Render predicted cells in the terminal's default
+                    // foreground. Earlier this walked left looking for
+                    // a styled neighbor and inherited its color, but
+                    // that produced wrong colors -- the neighbor might
+                    // be a syntax-highlighted token or unrelated word.
+                    // The prediction represents the user's input,
+                    // which should render in the input color (default
+                    // fg), not whatever happens to be painted to the
+                    // left of where they're typing.
                     self.addPredictedCell(
                         .{ .codepoint = @intCast(pc.codepoint), .wide = pc.wide },
                         .{ .x = pc.col, .y = pc.row },
-                        predicted_fg,
+                        state.colors.foreground,
                         predicted_cells_flagged,
                     ) catch |err| {
                         log.warn(
