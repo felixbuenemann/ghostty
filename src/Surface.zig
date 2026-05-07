@@ -2684,6 +2684,29 @@ pub fn getCursorPosition(
     };
 }
 
+/// Read the live codepoint at an active-area viewport coordinate.
+/// Returns 0 for empty / non-codepoint cells or out-of-bounds pins.
+pub fn getCellCodepoint(
+    self: *Surface,
+    coord: terminal.point.Coordinate,
+) u32 {
+    self.renderer_state.mutex.lock();
+    defer self.renderer_state.mutex.unlock();
+
+    const screen: *const terminal.Screen = self.io.terminal.screens.active;
+    const pin = screen.pages.pin(.{
+        .active = .{
+            .x = coord.x,
+            .y = coord.y,
+        },
+    }) orelse return 0;
+    const cell = pin.rowAndCell().cell.*;
+    return switch (cell.content_tag) {
+        .codepoint, .codepoint_grapheme => cell.content.codepoint,
+        else => 0,
+    };
+}
+
 /// Callback type for `dryRunParseCallback`. Invoked once per cell
 /// whose content/style differs from the original screen after the
 /// dry-run parse. Coordinates are in the active viewport.

@@ -1187,6 +1187,12 @@ GHOSTTY_API void ghostty_surface_get_cursor(ghostty_surface_t,
                                                  uint32_t* out_col,
                                                  uint32_t* out_row);
 
+// Read the live codepoint at a viewport coordinate. Returns 0 for
+// empty / non-codepoint cells or out-of-bounds coordinates.
+GHOSTTY_API uint32_t ghostty_surface_get_cell_codepoint(ghostty_surface_t,
+                                                             uint32_t col,
+                                                             uint32_t row);
+
 // Per-cell callback for ghostty_surface_dry_run_parse. Called once per
 // cell whose content/style differs from the live screen after the
 // dry-run parse. wide=true marks the leading cell of a wide character;

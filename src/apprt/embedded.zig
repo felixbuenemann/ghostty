@@ -2101,6 +2101,19 @@ pub const CAPI = struct {
         if (out_row) |p| p.* = coord.y;
     }
 
+    /// Read the live codepoint at a viewport coordinate. Returns 0 for
+    /// empty / non-codepoint cells or out-of-bounds coordinates.
+    export fn ghostty_surface_get_cell_codepoint(
+        surface: *Surface,
+        col: u32,
+        row: u32,
+    ) u32 {
+        return surface.core_surface.getCellCodepoint(.{
+            .x = @intCast(col),
+            .y = row,
+        });
+    }
+
     /// Per-cell callback invoked by `ghostty_surface_dry_run_parse`.
     /// Called once per cell that the dry-run parse would mutate
     /// relative to the current screen state. `wide` is true for the
