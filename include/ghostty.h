@@ -1248,6 +1248,29 @@ GHOSTTY_API void ghostty_surface_free_text(ghostty_surface_t, ghostty_text_s*);
 GHOSTTY_API void ghostty_surface_set_selection(ghostty_surface_t,
                                                ghostty_selection_s);
 GHOSTTY_API void ghostty_surface_clear_selection(ghostty_surface_t);
+// Writes the active selection's viewport cell bounds into *out
+// (tag=viewport, coord_tag=exact), tolerant of an endpoint scrolled
+// out of the viewport: that endpoint is clamped to the nearest edge
+// and its *_visible out-param is set false. Returns false only when
+// there is no active selection at all. Lets the caller keep showing
+// the on-screen handle of a multi-screen selection.
+GHOSTTY_API bool ghostty_surface_get_selection_bounds_visible(
+    ghostty_surface_t,
+    ghostty_selection_s* /* out bounds, clamped */,
+    bool* /* out top_left_visible */,
+    bool* /* out bottom_right_visible */);
+// Moves one endpoint of the active selection to viewport cell (x,y)
+// while anchoring the opposite endpoint at its current position. If
+// moving_top_left is true the top-left endpoint follows (x,y), else
+// the bottom-right one does. The anchor is read from the live
+// selection's tracked pins, so it survives scrolling off-screen —
+// enabling drag-to-extend across more than one screenful (the caller
+// auto-scrolls to keep the moving cell on-screen). Returns false if
+// there's no selection or (x,y) can't be resolved.
+GHOSTTY_API bool ghostty_surface_selection_set_endpoint(ghostty_surface_t,
+                                                        bool moving_top_left,
+                                                        uint32_t x,
+                                                        uint32_t y);
 // Computes the word-boundary selection at viewport cell (x,y). Does
 // NOT apply it — the caller follows up with ghostty_surface_set_selection
 // if they want to commit it. Matches the word-detection semantics of

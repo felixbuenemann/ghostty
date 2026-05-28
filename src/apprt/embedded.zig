@@ -1786,6 +1786,115 @@ pub const CAPI = struct {
         return true;
     }
 
+    /// Read the active selection's viewport cell bounds into `out`,
+    /// tolerant of an endpoint that has scrolled out of the viewport:
+    /// such an endpoint is clamped to the nearest viewport edge and its
+    /// matching `*_visible` out-param is set false. Returns false only
+    /// when there is no active selection at all (out-params untouched).
+    /// Lets the embedder keep rendering the on-screen handle of a
+    /// multi-screen selection instead of hiding both the instant one
+    /// end scrolls away.
+    export fn ghostty_surface_get_selection_bounds_visible(
+        ptr: *Surface,
+        out: *Selection,
+        out_tl_visible: *bool,
+        out_br_visible: *bool,
+    ) bool {
+        const surface = &ptr.core_surface;
+        surface.renderer_state.mutex.lock();
+        defer surface.renderer_state.mutex.unlock();
+
+        const screen = surface.renderer_state.terminal.screens.active;
+        const sel = screen.selection orelse return false;
+
+        out.* = .{
+            .tl = clampPinToViewport(screen, sel.topLeft(screen), out_tl_visible),
+            .br = clampPinToViewport(screen, sel.bottomRight(screen), out_br_visible),
+            .rectangle = sel.rectangle,
+        };
+        return true;
+    }
+
+    /// Resolve a pin to a viewport `Point`, clamping to the nearest
+    /// edge when it's scrolled off-screen. `out_visible` reports
+    /// whether the pin actually fell inside the viewport.
+    fn clampPinToViewport(
+        screen: *terminal.Screen,
+        p: terminal.Pin,
+        out_visible: *bool,
+    ) Point {
+        if (screen.pages.pointFromPin(.viewport, p)) |pt| {
+            out_visible.* = true;
+            const c = pt.coord();
+            return .{ .tag = .viewport, .coord_tag = .exact, .x = @intCast(c.x), .y = @intCast(c.y) };
+        }
+        out_visible.* = false;
+        // Off-screen: clamp to the edge it fell off. A pin before the
+        // viewport's top-left is above it (top edge, y=0); otherwise
+        // below (bottom edge, last row). x is irrelevant — the caller
+        // hides the handle for a non-visible endpoint.
+        const above = p.before(screen.pages.getTopLeft(.viewport));
+        const rows: u32 = @intCast(screen.pages.rows);
+        return .{
+            .tag = .viewport,
+            .coord_tag = .exact,
+            .x = 0,
+            .y = if (above) 0 else (rows -| 1),
+        };
+    }
+
+    /// Move one endpoint of the active selection to viewport cell
+    /// (x, y) while leaving the opposite endpoint anchored where it
+    /// is. `moving_top_left` chooses which endpoint follows: true =
+    /// the selection's top-left endpoint, false = the bottom-right.
+    /// The anchor is taken from the live selection's tracked pins, not
+    /// re-specified in viewport coordinates, so it survives being
+    /// scrolled off-screen — which is what lets a drag extend the
+    /// selection across more than one screenful. The moving endpoint
+    /// is resolved against the viewport, so the caller should
+    /// auto-scroll to keep the dragged cell on-screen. Returns false
+    /// if there's no selection or (x, y) can't be resolved.
+    export fn ghostty_surface_selection_set_endpoint(
+        ptr: *Surface,
+        moving_top_left: bool,
+        x: u32,
+        y: u32,
+    ) bool {
+        const surface = &ptr.core_surface;
+        surface.renderer_state.mutex.lock();
+        defer surface.renderer_state.mutex.unlock();
+
+        const screen = surface.renderer_state.terminal.screens.active;
+        const sel = screen.selection orelse return false;
+
+        const pt_x = std.math.cast(
+            terminal.size.CellCountInt,
+            @min(x, screen.pages.cols -| 1),
+        ) orelse return false;
+        const pt_y = std.math.cast(
+            terminal.size.CellCountInt,
+            @min(y, screen.pages.rows -| 1),
+        ) orelse return false;
+        const moving_pin = screen.pages.pin(.{
+            .viewport = .{ .x = pt_x, .y = pt_y },
+        }) orelse return false;
+
+        // Anchor = the endpoint NOT being dragged. topLeft/bottomRight
+        // return ordered pin values (copies), so they stay valid after
+        // the old selection's tracked pins are released by select().
+        const anchor_pin = if (moving_top_left)
+            sel.bottomRight(screen)
+        else
+            sel.topLeft(screen);
+
+        const next = terminal.Selection.init(anchor_pin, moving_pin, sel.rectangle);
+        surface.setSelectionPublic(next) catch |err| {
+            log.warn("error setting selection endpoint err={}", .{err});
+            return false;
+        };
+        return true;
+    }
+
     /// Compute the word-boundary selection at viewport cell (x,y).
     /// Returns false if the cell has no word. Does NOT apply it —
     /// the caller follows up with ghostty_surface_set_selection.
